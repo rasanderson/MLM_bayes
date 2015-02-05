@@ -9,6 +9,23 @@ library(mcmcplots)
 
 rm(list=ls())
 
+extract_linpred <- function (mcmcout) {
+  psi.data <- ggs(mcmcout, family="psi")
+  linpred <- NULL
+  psi.data.dt <- data.table(psi.data[,1], psi.data[,2], psi.data[,3], psi.data[,4])
+  setkey(psi.data.dt, Parameter)
+  
+  for(i in 1:Nobs){
+    cond <- paste0("psi[", i, "]")
+    sub <- psi.data.dt[cond]$value
+    sub <- log(sub/(1-sub))
+    linpred[i] <- mean(sub)
+  }
+  return(linpred)
+}
+
+
+
 data(mite)
 data(mite.env)
 mite.env <- mite.env[,1:2]
@@ -172,6 +189,7 @@ caterplot(out_norand, "betas")
 ################################################
 # If 95 HDI of st.dev. of beta[j] overlaps zero, then fixed effect.
 # (i.e. no significant variability in effect among species)
+print("About to check random vs fixed")
 library(ggmcmc)
 source(file="HDI.R")
 
@@ -192,36 +210,47 @@ print(hdi.sd)  # HDI does not encompass zero therefore both are rand effects
 ################################################
 # Extract 'linear predictor' (logit(psi)) of the best model
 ################################################
+print("About to start linear prediction extraction best")
 #psi.best <- ggs(out3, family="psi")
 # In original example out3 was best model, here just looking at all rnd so out0
-psi.best <- ggs(out0, family="psi")
-linpred.best <- NULL
+# psi.best <- ggs(out0, family="psi")
+# linpred.best <- NULL
+# 
+# 
+# for(i in 1:Nobs){
+#    sub <- subset(psi.best, Parameter==paste("psi[", i, "]", sep=""))$value
+#    sub <- log(sub/(1-sub))
+#    linpred.best[i] <- mean(sub)
+# }
 
-
-for(i in 1:Nobs){
-   sub <- subset(psi.best, Parameter==paste("psi[", i, "]", sep=""))$value
-   sub <- log(sub/(1-sub))
-   linpred.best[i] <- mean(sub)
-}
+linpred.best <- extract_linpred(out0)
 
 ################################################
 # Extract 'linear predictor' of the model with NO random effects
 ################################################
-psi.norand <- ggs(out_norand, family="psi")
+print("About to start linear predictor extraction")
+#psi.norand <- ggs(out_norand, family="psi")
 
-linpred.norand <- NULL
 
-for(i in 1:Nobs){
-   sub <- subset(psi.norand, Parameter==paste("psi[", i, "]", sep=""))$value
-   sub <- log(sub/(1-sub))
-   linpred.norand[i] <- mean(sub)
-}
+# linpredOrig <- function (Nobs, psi.norand) {
+#   linpred.norand <- NULL
+#   
+#   for(i in 1:Nobs){
+#      sub <- subset(psi.norand, Parameter==paste("psi[", i, "]", sep=""))$value
+#      sub <- log(sub/(1-sub))
+#      linpred.norand[i] <- mean(sub)
+#   }
+#   return(linpred.norand)
+# }
+
+linpred.norand <- extract_linpred(out_norand)
 
 #--------------------------------------------------------------------------
 #--------------------------------------------------------------------------
 ################################################
 # Conduct PCA to ordinate sites, map environmental effects
 ################################################
+print("About to start PCA extraction")
 MLM.fitted <- array(linpred.best - linpred.norand, c(Nobs/Nspecies, Nspecies))
 
 rownames(MLM.fitted)=c(1:Nsite)
@@ -250,7 +279,7 @@ envir.points <- t(array(colMeans(mlm.envir),c(2,dim(mlm.envir)[2]/2)))
 
 # plot mlm
 plot(-mlm.fit,xlab="PC1",ylab="PC2",type="n")
-text(-mlm.fit,label=c(1:(Nobs/Nspecies)),cex=.5)
+text(-mlm.fit,label=c(1:(Nobs/Nspecies)),cex=.75)
 #points(-mlm.fit, pch=19, cex=0.5)
 
 arrow.coordMLM <- cbind(array(0,dim(envir.points)),-envir.points)
