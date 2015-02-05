@@ -6,6 +6,7 @@
 
 library(vegan)
 library(mcmcplots)
+library(data.table)
 
 rm(list=ls())
 
@@ -83,102 +84,121 @@ nburn <-750
 thin<-7
 chains <- 3
 
-modeltext <- "
-model {
-  # Priors
-  psi.mean ~ dbeta(1,1)
-  #p.detect.mean ~ dbeta(1,1)
 
-  sd.psi ~ dunif(0,10)
-  psi.tau <- pow(sd.psi, -2)
-
-  #sd.p.detect ~ dunif(0,10)
-  #p.detect.tau <- pow(sd.p.detect, -2)
-
-  for(i in 1:Nspecies){
-    alpha[i] ~ dnorm(logit(psi.mean), psi.tau)T(-12,12)
-    #lp.detect[i] ~ dnorm(logit(p.detect.mean), p.detect.tau)T(-12,12)
-    #p.detect[i] <- exp(lp.detect[i]) / (1 + exp(lp.detect[i]))
-  }
-
-  for(j in 1:Ncov){
-    mean.beta[j] ~ dnorm(0, 0.01)
-    sd.beta[j] ~ dunif(0, 10)
-    tau.beta[j] <- pow(sd.beta[j]+0.001, -2)
-    for(i in 1:Nspecies){
-      betas[i,j] ~ dnorm(mean.beta[j], tau.beta[j])
-    }
-  }
-
-  # Likelihood
-  for(i in 1:Nobs){
-    logit(psi[i]) <- alpha[Species[i]] + inprod(betas[Species[i],], X[i, ])
-    Y[i] ~ dbern(psi[i])
-    #z[i] ~ dbern(psi[i])
-    #Y[i] ~ dbinom(z[i] * p.detect[Species[i]], J[i])
-  }
-}
-
-"
+# original_modeltext ------------------------------------------------------
+# modeltext <- "
+# model {
+#   # Priors
+#   psi.mean ~ dbeta(1,1)
+#   #p.detect.mean ~ dbeta(1,1)
+# 
+#   sd.psi ~ dunif(0,10)
+#   psi.tau <- pow(sd.psi, -2)
+# 
+#   #sd.p.detect ~ dunif(0,10)
+#   #p.detect.tau <- pow(sd.p.detect, -2)
+# 
+#   for(i in 1:Nspecies){
+#     alpha[i] ~ dnorm(logit(psi.mean), psi.tau)T(-12,12)
+#     #lp.detect[i] ~ dnorm(logit(p.detect.mean), p.detect.tau)T(-12,12)
+#     #p.detect[i] <- exp(lp.detect[i]) / (1 + exp(lp.detect[i]))
+#   }
+# 
+#   for(j in 1:Ncov){
+#     mean.beta[j] ~ dnorm(0, 0.01)
+#     sd.beta[j] ~ dunif(0, 10)
+#     tau.beta[j] <- pow(sd.beta[j]+0.001, -2)
+#     for(i in 1:Nspecies){
+#       betas[i,j] ~ dnorm(mean.beta[j], tau.beta[j])
+#     }
+#   }
+# 
+#   # Likelihood
+#   for(i in 1:Nobs){
+#     logit(psi[i]) <- alpha[Species[i]] + inprod(betas[Species[i],], X[i, ])
+#     Y[i] ~ dbern(psi[i])
+#     #z[i] ~ dbern(psi[i])
+#     #Y[i] ~ dbinom(z[i] * p.detect[Species[i]], J[i])
+#   }
+# }
+# 
+# end_original_modeltext -----
 
 
 readline("Hit return to call JAGS")
-mod0 <- jags.model(file = textConnection(modeltext), 
-                   data = jags_d, n.chains = chains, n.adapt=nadap)
-update(mod0, n.iter=nburn)
-out0 <- coda.samples(mod0, n.iter = store*thin, 
-                     variable.names = params, thin=thin)
+# mod0 <- jags.model(file = textConnection(modeltext), 
+#                    data = jags_d, n.chains = chains, n.adapt=nadap)
+# update(mod0, n.iter=nburn)
+# out0 <- coda.samples(mod0, n.iter = store*thin, 
+#                      variable.names = params, thin=thin)
+cl <- makePSOCKcluster(3)
+parJagsModel(cl, name="mod0res", file="jags_models/MLM_0f.txt", data=jags_d, n.chains=3, n.adapt=nadap)
+parUpdate(cl, "mod0res", n.iter=nburn)
+out0 <- parCodaSamples(cl, "mod0res", params, n.iter=store*thin, thin=thin)
+stopCluster(cl)
+
+
+
 caterplot(out0, "betas")
 #caterpoints(c(Beta))
 #WAIC_0f <- calc_waic(posterior=out0, jags_d)
 
 
-
+# start_modelnorand ----
 # Model with no random effects; see page 5 of Jackson et al 2012
-modeltext_norand <- "
-model {
-   # Priors
-   psi.mean ~ dbeta(1,1)
-   p.detect.mean ~ dbeta(1,1)
-   
-   sd.psi ~ dunif(0,10)
-   psi.tau <- pow(sd.psi, -2)
-   
-   sd.p.detect ~ dunif(0,10)
-   p.detect.tau <- pow(sd.p.detect, -2)
-   
-   for(i in 1:Nspecies){
-      alpha[i] ~ dnorm(logit(psi.mean), psi.tau)T(-12,12)
-      #lp.detect[i] ~ dnorm(logit(p.detect.mean), p.detect.tau)T(-12,12)
-      #p.detect[i] <- exp(lp.detect[i]) / (1 + exp(lp.detect[i]))
-   }
-   
-   beta_f1 ~ dnorm(0, 0.01)
-   for (i in 1:Nspecies){
-      betas[i, 1] <- beta_f1
-   }
-   
-   beta_f2 ~ dnorm(0, 0.01)
-   for (i in 1:Nspecies){
-      betas[i, 2] <- beta_f2
-   }
-   
-   # Likelihood
-   for(i in 1:Nobs){
-      logit(psi[i]) <- alpha[Species[i]] + inprod(betas[Species[i],], X[i, ])
-      Y[i] ~ dbern(psi[i])
-      #z[i] ~ dbern(psi[i])
-      #Y[i] ~ dbinom(z[i] * p.detect[Species[i]], J[i])
-   }
-}
-"
+# modeltext_norand <- "
+# model {
+#    # Priors
+#    psi.mean ~ dbeta(1,1)
+#    p.detect.mean ~ dbeta(1,1)
+#    
+#    sd.psi ~ dunif(0,10)
+#    psi.tau <- pow(sd.psi, -2)
+#    
+#    sd.p.detect ~ dunif(0,10)
+#    p.detect.tau <- pow(sd.p.detect, -2)
+#    
+#    for(i in 1:Nspecies){
+#       alpha[i] ~ dnorm(logit(psi.mean), psi.tau)T(-12,12)
+#       #lp.detect[i] ~ dnorm(logit(p.detect.mean), p.detect.tau)T(-12,12)
+#       #p.detect[i] <- exp(lp.detect[i]) / (1 + exp(lp.detect[i]))
+#    }
+#    
+#    beta_f1 ~ dnorm(0, 0.01)
+#    for (i in 1:Nspecies){
+#       betas[i, 1] <- beta_f1
+#    }
+#    
+#    beta_f2 ~ dnorm(0, 0.01)
+#    for (i in 1:Nspecies){
+#       betas[i, 2] <- beta_f2
+#    }
+#    
+#    # Likelihood
+#    for(i in 1:Nobs){
+#       logit(psi[i]) <- alpha[Species[i]] + inprod(betas[Species[i],], X[i, ])
+#       Y[i] ~ dbern(psi[i])
+#       #z[i] ~ dbern(psi[i])
+#       #Y[i] ~ dbinom(z[i] * p.detect[Species[i]], J[i])
+#    }
+# }
+# "
+# end_modelnorand ----
 
 readline("Hit return to call JAGS")
-mod_norand <- jags.model(file = textConnection(modeltext_norand), 
-                   data = jags_d, n.chains = chains, n.adapt=nadap)
-update(mod_norand, n.iter=nburn)
-out_norand <- coda.samples(mod_norand, n.iter = store*thin, 
-                     variable.names = params, thin=thin)
+# mod_norand <- jags.model(file = textConnection(modeltext_norand), 
+#                    data = jags_d, n.chains = chains, n.adapt=nadap)
+# update(mod_norand, n.iter=nburn)
+# out_norand <- coda.samples(mod_norand, n.iter = store*thin, 
+#                      variable.names = params, thin=thin)
+
+cl <- makePSOCKcluster(3)
+parJagsModel(cl, name="mod12res", file="jags_models/MLM_12f.txt", data=jags_d, n.chains=3, n.adapt=nadap)
+parUpdate(cl, "mod12res", n.iter=nburn)
+out_norand <- parCodaSamples(cl, "mod12res", params, n.iter=store*thin, thin=thin)
+stopCluster(cl)
+
+
 caterplot(out_norand, "betas")
 
 
