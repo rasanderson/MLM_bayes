@@ -1,18 +1,12 @@
 model {
    # Priors
    psi.mean ~ dbeta(1,1)
-   #p.detect.mean ~ dbeta(1,1)
 
    sd.psi ~ dunif(0,10)
    psi.tau <- pow(sd.psi, -2)
 
-   #sd.p.detect ~ dunif(0,10)
-   #p.detect.tau <- pow(sd.p.detect, -2)
-
    for(i in 1:Nspecies){
       alpha[i] ~ dnorm(logit(psi.mean), psi.tau)T(-12,12)
-      #lp.detect[i] ~ dnorm(logit(p.detect.mean), p.detect.tau)T(-12,12)
-      #p.detect[i] <- exp(lp.detect[i]) / (1 + exp(lp.detect[i]))
    }
 
    for(j in 1:Ncov){
@@ -28,7 +22,5 @@ model {
    for(i in 1:Nobs){
       logit(psi[i]) <- alpha[Species[i]] + inprod(betas[Species[i],], X[i, ])
       Y[i] ~ dbern(psi[i])
-      #z[i] ~ dbern(psi[i])
-      #Y[i] ~ dbinom(z[i] * p.detect[Species[i]], J[i])
    }
 }
